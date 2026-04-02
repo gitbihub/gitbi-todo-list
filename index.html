@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>할일 목록</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>📝 할일 목록</h1>
+    <p class="subtitle">오늘 해야 할 일들을 정리해보세요</p>
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-number" id="stat-total">0</div>
+        <div class="stat-label">전체</div>
+      </div>
+      <div class="stat">
+        <div class="stat-number" id="stat-done">0</div>
+        <div class="stat-label">완료</div>
+      </div>
+      <div class="stat">
+        <div class="stat-number" id="stat-pending">0</div>
+        <div class="stat-label">진행 중</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Input -->
+  <div class="input-area">
+    <div class="input-row">
+      <input
+        type="text"
+        id="new-todo-input"
+        placeholder="새 할일을 입력하세요..."
+        maxlength="200"
+      />
+      <button class="btn-add" id="btn-add">+ 추가</button>
+    </div>
+  </div>
+
+  <!-- Filter tabs -->
+  <div class="filter-tabs">
+    <button class="tab active" data-filter="all">전체</button>
+    <button class="tab" data-filter="pending">진행 중</button>
+    <button class="tab" data-filter="done">완료</button>
+  </div>
+
+  <!-- List -->
+  <div class="todo-list" id="todo-list"></div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <button class="btn-clear" id="btn-clear-done">완료 항목 삭제</button>
+  </div>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
