@@ -1,6 +1,8 @@
+const API = 'http://localhost:5000/api/todos';
+
 // ── State ──────────────────────────────────────────────────────────────────
-let todos = JSON.parse(localStorage.getItem('todos') || '[]');
-let filter = 'all';
+let todos     = [];
+let filter    = 'all';
 let editingId = null;
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
@@ -12,37 +14,75 @@ const statTotal   = document.getElementById('stat-total');
 const statDone    = document.getElementById('stat-done');
 const statPending = document.getElementById('stat-pending');
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-function save() {
-  localStorage.setItem('todos', JSON.stringify(todos));
+// ── API helpers ────────────────────────────────────────────────────────────
+async function apiFetch(path, options = {}) {
+  const res = await fetch(API + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  if (res.status === 204) return null;
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || '서버 오류가 발생했습니다.');
+  return data;
 }
 
-function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+function showError(msg) {
+  const el = document.getElementById('error-banner');
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.style.display = 'none'; }, 4000);
 }
 
-function escapeHtml(str) {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+function setLoading(on) {
+  btnAdd.disabled = on;
+  btnAdd.textContent = on ? '...' : '+ 추가';
+}
+
+// ── Fetch all ──────────────────────────────────────────────────────────────
+async function loadTodos() {
+  try {
+    todos = await apiFetch('');
+    render();
+  } catch (e) {
+    showError('목록을 불러오지 못했습니다: ' + e.message);
+  }
 }
 
 // ── CRUD ───────────────────────────────────────────────────────────────────
-function addTodo() {
-  const text = input.value.trim();
-  if (!text) { input.focus(); return; }
-  todos.unshift({ id: generateId(), text, done: false });
-  input.value = '';
-  save();
-  render();
-  input.focus();
+async function addTodo() {
+  const title = input.value.trim();
+  if (!title) { input.focus(); return; }
+  setLoading(true);
+  try {
+    const created = await apiFetch('', {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    });
+    todos.unshift(created);
+    input.value = '';
+    render();
+    input.focus();
+  } catch (e) {
+    showError('추가 실패: ' + e.message);
+  } finally {
+    setLoading(false);
+  }
 }
 
-function toggleTodo(id) {
-  const todo = todos.find(t => t.id === id);
-  if (todo) { todo.done = !todo.done; save(); render(); }
+async function toggleTodo(id) {
+  const todo = todos.find(t => t._id === id);
+  if (!todo) return;
+  try {
+    const updated = await apiFetch('/' + id, {
+      method: 'PATCH',
+      body: JSON.stringify({ completed: !todo.completed }),
+    });
+    Object.assign(todo, updated);
+    render();
+  } catch (e) {
+    showError('완료 상태 변경 실패: ' + e.message);
+  }
 }
 
 function startEdit(id) {
@@ -52,15 +92,22 @@ function startEdit(id) {
   if (el) { el.focus(); el.select(); }
 }
 
-function saveEdit(id) {
+async function saveEdit(id) {
   const el = document.getElementById('edit-' + id);
-  const text = el ? el.value.trim() : '';
-  if (!text) return;
-  const todo = todos.find(t => t.id === id);
-  if (todo) { todo.text = text; }
-  editingId = null;
-  save();
-  render();
+  const title = el ? el.value.trim() : '';
+  if (!title) return;
+  try {
+    const updated = await apiFetch('/' + id, {
+      method: 'PATCH',
+      body: JSON.stringify({ title }),
+    });
+    const todo = todos.find(t => t._id === id);
+    if (todo) Object.assign(todo, updated);
+    editingId = null;
+    render();
+  } catch (e) {
+    showError('수정 실패: ' + e.message);
+  }
 }
 
 function cancelEdit() {
@@ -68,30 +115,50 @@ function cancelEdit() {
   render();
 }
 
-function deleteTodo(id) {
-  todos = todos.filter(t => t.id !== id);
-  if (editingId === id) editingId = null;
-  save();
-  render();
+async function deleteTodo(id) {
+  try {
+    await apiFetch('/' + id, { method: 'DELETE' });
+    todos = todos.filter(t => t._id !== id);
+    if (editingId === id) editingId = null;
+    render();
+  } catch (e) {
+    showError('삭제 실패: ' + e.message);
+  }
 }
 
-function clearDone() {
-  todos = todos.filter(t => !t.done);
-  save();
-  render();
+async function clearDone() {
+  const doneIds = todos.filter(t => t.completed).map(t => t._id);
+  if (doneIds.length === 0) return;
+  try {
+    await Promise.all(doneIds.map(id => apiFetch('/' + id, { method: 'DELETE' })));
+    todos = todos.filter(t => !t.completed);
+    render();
+  } catch (e) {
+    showError('완료 항목 삭제 실패: ' + e.message);
+    await loadTodos();
+  }
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 // ── Render ─────────────────────────────────────────────────────────────────
 function render() {
-  const doneCount    = todos.filter(t => t.done).length;
+  const doneCount    = todos.filter(t => t.completed).length;
   const pendingCount = todos.length - doneCount;
   statTotal.textContent   = todos.length;
   statDone.textContent    = doneCount;
   statPending.textContent = pendingCount;
 
   const visible = todos.filter(t => {
-    if (filter === 'done')    return t.done;
-    if (filter === 'pending') return !t.done;
+    if (filter === 'done')    return t.completed;
+    if (filter === 'pending') return !t.completed;
     return true;
   });
 
@@ -107,31 +174,32 @@ function render() {
   }
 
   listEl.innerHTML = visible.map(todo => {
-    const isEditing = editingId === todo.id;
+    const id        = todo._id;
+    const isEditing = editingId === id;
 
     const checkHtml = `
-      <div class="todo-check ${todo.done ? 'checked' : ''}"
-           data-id="${todo.id}" data-action="toggle"></div>`;
+      <div class="todo-check ${todo.completed ? 'checked' : ''}"
+           data-id="${id}" data-action="toggle"></div>`;
 
     const textHtml = isEditing
-      ? `<input class="todo-edit-input" id="edit-${todo.id}"
-                value="${escapeHtml(todo.text)}"
-                data-id="${todo.id}" data-action="edit-input"
+      ? `<input class="todo-edit-input" id="edit-${id}"
+                value="${escapeHtml(todo.title)}"
+                data-id="${id}" data-action="edit-input"
                 maxlength="200" />`
-      : `<span class="todo-text ${todo.done ? 'done' : ''}">${escapeHtml(todo.text)}</span>`;
+      : `<span class="todo-text ${todo.completed ? 'done' : ''}">${escapeHtml(todo.title)}</span>`;
 
     const actionsHtml = isEditing
       ? `<div class="todo-actions">
-           <button class="btn-icon btn-save"   data-id="${todo.id}" data-action="save"   title="저장">✓</button>
-           <button class="btn-icon btn-cancel" data-id="${todo.id}" data-action="cancel" title="취소">✕</button>
+           <button class="btn-icon btn-save"   data-id="${id}" data-action="save"   title="저장">✓</button>
+           <button class="btn-icon btn-cancel" data-id="${id}" data-action="cancel" title="취소">✕</button>
          </div>`
       : `<div class="todo-actions">
-           <button class="btn-icon btn-edit"   data-id="${todo.id}" data-action="edit"   title="수정">✏️</button>
-           <button class="btn-icon btn-delete" data-id="${todo.id}" data-action="delete" title="삭제">🗑️</button>
+           <button class="btn-icon btn-edit"   data-id="${id}" data-action="edit"   title="수정">✏️</button>
+           <button class="btn-icon btn-delete" data-id="${id}" data-action="delete" title="삭제">🗑️</button>
          </div>`;
 
     return `
-      <div class="todo-item" data-id="${todo.id}">
+      <div class="todo-item" data-id="${id}">
         ${checkHtml}
         ${textHtml}
         ${actionsHtml}
@@ -172,4 +240,4 @@ document.querySelectorAll('.tab').forEach(tab => {
 });
 
 // ── Init ───────────────────────────────────────────────────────────────────
-render();
+loadTodos();
